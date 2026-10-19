@@ -80,7 +80,7 @@ if(!opening)$("setup").hidden=false;render();
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithRedirect, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -104,6 +104,17 @@ let applyingCloud = false;
 let lastCloudJson = "";
 
 function status(message) { $("cloudStatus").textContent = message; }
+
+// Check the result after returning from Google sign-in redirect.
+// onAuthStateChanged remains responsible for setting up the signed-in session.
+getRedirectResult(auth).then(result => {
+  if (result && result.user) {
+    status("Google sign-in successful. Loading your cloud data…");
+  }
+}).catch(e => {
+  console.error("Google redirect result error:", e);
+  status("Google sign-in result error: " + (e.code || e.message));
+});
 function localSnapshot() {
   return {
     transactions: JSON.parse(localStorage.getItem("pmv5Tx") || "[]"),
