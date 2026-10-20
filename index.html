@@ -132,3 +132,199 @@ $("restore").onclick=()=>$("restoreFile").click();$("restoreFile").onchange=asyn
 $("google").onclick=()=>{if(window.pmFirebaseSignIn)window.pmFirebaseSignIn();else alert("Firebase SDK is loading. Please try again in a moment.")};
 ["filter","from","to"].forEach(id=>$(id).addEventListener("change",render));$("search").oninput=render;
 function drawChart(){let can=$("chart");if(!can)return;let r=can.getBoundingClientRect();if(!r.width)return;let d=window.
+can.width=r.width*d;can.height=230*d;let x=can.getContext("2d");x.scale(d,d);let W=r.width,H=230,period=$("period").value,mode=$("mode").value,m=today().slice(0,7),data=tx.filter(t=>["income","expense"].includes(t.type));if(period==="month")data=data.filter(t=>t.date.startsWith(m));if(period==="6"){let min=today().slice(0,7),dt=new Date();dt.setMonth(dt.getMonth()-5);min=new Date(dt.getFullYear(),dt.getMonth(),1).toISOString().slice(0,7);data=data.filter(t=>t.date.slice(0,7)>=min)}x.clearRect(0,0,W,H);x.font="11px system-ui";x.fillStyle=document.body.classList.contains("dark")?"#94a3b8":"#68728c";if(mode==="category"){let s={};data.filter(t=>t.type==="expense").forEach(t=>s[t.category]=(s[t.category]||0)+t.amount);let rows=Object.entries(s).sort((a,b)=>b[1]-a[1]).slice(0,7),max=Math.max(1,...rows.map(z=>z[1]));if(!rows.length){x.fillText("No expenses yet",10,30);return}rows.forEach(([n,v],i)=>{let y=16+i*28;x.fillStyle=document.body.classList.contains("dark")?"#94a3b8":"#68728c";x.fillText(n.slice(0,15),2,y+10);x.fillStyle=document.body.classList.contains("dark")?"#1e293b":"#e2e6ef";x.fillRect(92,y,W-140,14);x.fillStyle="#5146d8";x.fillRect(92,y,(W-140)*v/max,14);x.fillStyle=document.body.classList.contains("dark")?"#94a3b8":"#68728c";x.fillText(Math.round(v).toString(),W-45,y+10)});return}
+let keys=period==="6"?Array.from({length:6},(_,i)=>{let d=new Date();d.setDate(1);d.setMonth(d.getMonth()-5+i);return d.toISOString().slice(0,7)}):period==="month"?[m]:[...new Set(data.map(t=>t.date.slice(0,7)))].sort().slice(-6);let vals=keys.map(k=>({k,i:data.filter(t=>t.type==="income"&&t.date.startsWith(k)).reduce((s,t)=>s+t.amount,0),e:data.filter(t=>t.type==="expense"&&t.date.startsWith(k)).reduce((s,t)=>s+t.amount,0)})),max=Math.max(1,...vals.flatMap(v=>[v.i,v.e])),L=38,T=20,B=32,pw=W-L-8,ph=H-T-B;
+for(let j=0;j<=4;j++){let y=T+ph*j/4;x.strokeStyle=document.body.classList.contains("dark")?"#1e293b":"#e2e6ef";x.beginPath();x.moveTo(L,y);x.lineTo(W-8,y);x.stroke();x.fillStyle=document.body.classList.contains("dark")?"#94a3b8":"#68728c";x.textAlign="right";x.fillText(Math.round(max*(1-j/4)).toString(),L-4,y+3)}
+let gw=pw/Math.max(1,vals.length),bw=Math.min(18,gw*.27);vals.forEach((v,i)=>{let cx=L+gw*(i+.5);x.fillStyle="#0e9f6e";x.fillRect(cx-bw-2,T+ph-ph*v.i/max,bw,ph*v.i/max);x.fillStyle="#f05252";x.fillRect(cx+2,T+ph-ph*v.e/max,bw,ph*v.e/max);x.fillStyle=document.body.classList.contains("dark")?"#94a3b8":"#68728c";x.textAlign="center";x.fillText(v.k.slice(5),cx,H-10)});$("chartNote").textContent="Green = income · Red = expenses"}
+$("period").onchange=drawChart;$("mode").onchange=drawChart;window.onresize=drawChart;
+const enc=s=>new TextEncoder().encode(s),dec=b=>new TextDecoder().decode(b),b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))),unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function keyFor(pin,salt){let b=await crypto.subtle.importKey("raw",enc(pin),"PBKDF2",false,["deriveKey"]);return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:250000,hash:"SHA-256"},b,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+async function encrypt(obj,key){let iv=crypto.getRandomValues(new Uint8Array(12)),ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,enc(JSON.stringify(obj)));return{iv:b64(iv),ct:b64(ct)}}
+async function decrypt(box,key){return JSON.parse(dec(await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(box.iv)},key,unb64(box.ct))))}
+function lockSecretInMemory(){vaultKey=null;vaultData=null;let p=$("secretPanel");if(p)p.hidden=true}
+async function openSecret(){let meta=read("pmv5Secret",null),pin;if(!meta){pin=prompt("Set private 4-digit PIN");if(pin===null)return;if(!/^\d{4}$/.test(pin)){alert("PIN must be 4 digits");return}try{let salt=crypto.getRandomValues(new Uint8Array(16));vaultKey=await keyFor(pin,salt);vaultData={entries:[]};localStorage.setItem("pmv5Secret",JSON.stringify({salt:b64(salt),box:await encrypt(vaultData,vaultKey)}));showSecretPanel()}catch{alert("Secure storage unavailable in this browser")}return}
+pin=prompt("Private PIN");if(pin===null)return;if(!/^\d{4}$/.test(pin)){alert("Incorrect PIN");return}try{vaultKey=await keyFor(pin,unb64(meta.salt));vaultData=await decrypt(meta.box,vaultKey);showSecretPanel()}catch{vaultKey=null;alert("Incorrect PIN")}}
+function showSecretPanel(){let p=$("secretPanel");if(!p){p=document.createElement("div");p.id="secretPanel";p.className="modal";p.innerHTML=`<div class="modalinner"><h2>🔒 Private Savings</h2><div class="label">Balance</div><div class="value" id="sbal">••••</div><label>Action</label><select id="saction"><option value="add">Add savings</option><option value="withdraw">Withdraw</option></select><label>Amount (₹)</label><input id="samount" type="number" min=".01" step=".01"><label>Private note (optional)</label><input id="snote" maxlength="100"><button id="ssave" class="primary">Save</button><button id="slock" class="secondary" style="width:100%;margin-top:10px">Lock</button><div id="shistory"></div></div>`;document.body.appendChild(p);$("slock").onclick=lockSecretInMemory;$("ssave").onclick=async()=>{let amount=Number($("samount").value),action=$("saction").value;if(amount<=0)return alert("Enter amount");let bal=vaultData.entries.reduce((s,e)=>s+(e.action==="add"?e.amount:-e.amount),0);if(action==="withdraw"&&amount>bal)return alert("Not enough private savings");vaultData.entries.push({amount,action,note:$("snote").value.trim(),date:today()});let m=read("pmv5Secret",null);m.box=await encrypt(vaultData,vaultKey);localStorage.setItem("pmv5Secret",JSON.stringify(m));window.dispatchEvent(new Event("pm-local-change"));$("samount").value="";$("snote").value="";renderSecret()}}p.hidden=false;renderSecret()}
+function renderSecret(){if(!vaultData)return;let bal=vaultData.entries.reduce((s,e)=>s+(e.action==="add"?e.amount:-e.amount),0);$("sbal").textContent=fmt(bal);$("shistory").innerHTML=vaultData.entries.slice().reverse().map(e=>`<div class="tx"><div><div class="tx-title">${e.action==="add"?"Saved":"Withdrawn"}${e.note?" · "+safe(e.note):""}</div><div class="sub">${e.date}</div></div><b>${e.action==="add"?"+":"−"}${fmt(e.amount)}</b></div>`).join("")}
+if(!opening)$("setup").hidden=false;render();
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD9IoxLdgDjc194fHMeo8sKe-kxAWHF0BM",
+  authDomain: "priyamoneymanager.firebaseapp.com",
+  projectId: "priyamoneymanager",
+  storageBucket: "priyamoneymanager.firebasestorage.app",
+  messagingSenderId: "352795128422",
+  appId: "1:352795128422:web:3c86e1aa3f1d7f6915f3a7",
+  measurementId: "G-5DN1SVVNQV"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = id => document.getElementById(id);
+let currentUser = null;
+let unsubscribeCloud = null;
+let writeTimer = null;
+let applyingCloud = false;
+let lastCloudJson = "";
+
+function status(message) { const cloud = $("cloudStatus"); if (cloud) cloud.textContent = message; const login = $("loginStatus"); if (login) login.textContent = message; }
+
+getRedirectResult(auth).catch(e => console.log("Redirect result notice:", e));
+
+function localSnapshot() {
+  return {
+    transactions: JSON.parse(localStorage.getItem("pmv5Tx") || "[]"),
+    opening: JSON.parse(localStorage.getItem("pmv5Opening") || "null"),
+    budget: Number(localStorage.getItem("pmv5Budget") || 0),
+    secretVaultEncrypted: JSON.parse(localStorage.getItem("pmv5Secret") || "null"),
+    schemaVersion: 1
+  };
+}
+function hasLocalData(s) {
+  return !!(s.opening || s.transactions.length || s.budget || s.secretVaultEncrypted);
+}
+function applySnapshot(data) {
+  applyingCloud = true;
+  try {
+    if (Array.isArray(data.transactions)) localStorage.setItem("pmv5Tx", JSON.stringify(data.transactions));
+    if (data.opening) localStorage.setItem("pmv5Opening", JSON.stringify(data.opening));
+    localStorage.setItem("pmv5Budget", String(Number(data.budget) || 0));
+    if (data.secretVaultEncrypted) localStorage.setItem("pmv5Secret", JSON.stringify(data.secretVaultEncrypted));
+    location.reload();
+  } finally {
+    applyingCloud = false;
+  }
+}
+async function writeCloud() {
+  if (!currentUser || applyingCloud) return;
+  const s = localSnapshot();
+  const json = JSON.stringify(s);
+  if (json === lastCloudJson) return;
+  try {
+    status("Syncing securely to your Google account…");
+    await setDoc(doc(db, "users", currentUser.uid, "appData", "main"), {
+      ...s, updatedAt: serverTimestamp()
+    });
+    lastCloudJson = json;
+    status("Cloud sync is on ✓");
+  } catch (e) {
+    console.error(e);
+    status("Sync failed: " + (e.code || e.message) + ". Check Firestore rules and internet.");
+  }
+}
+function queueWrite() {
+  if (!currentUser || applyingCloud) return;
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(writeCloud, 700);
+}
+window.pmFirebaseSignIn = async () => {
+  status("Opening Google sign-in window…");
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch (err) {
+    console.warn("Popup failed/blocked, trying redirect...", err);
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      try {
+        await signInWithRedirect(auth, new GoogleAuthProvider());
+      } catch (redErr) {
+        status("Sign-in failed: " + redErr.message);
+        alert("Sign-in failed: " + redErr.message);
+      }
+    } else {
+      status("Sign-in error: " + err.message);
+      alert("Sign-in error: " + err.message);
+    }
+  }
+};
+$("loginGoogle").onclick = () => window.pmFirebaseSignIn();
+$("signout").onclick = async () => {
+  try { if (unsubscribeCloud) unsubscribeCloud(); unsubscribeCloud = null; await signOut(auth); }
+  catch (e) { alert("Sign out failed: " + (e.code || e.message)); }
+};
+window.addEventListener("pm-local-change", queueWrite);
+
+onAuthStateChanged(auth, async user => {
+  if (unsubscribeCloud) { unsubscribeCloud(); unsubscribeCloud = null; }
+  currentUser = user || null;
+  document.body.classList.toggle("authenticated", !!user);
+  if (user) status("Signed in successfully. Opening your money manager…");
+  $("signout").style.display = user ? "block" : "none";
+  $("google").textContent = user ? "Signed in with Google ✓" : "Continue with Google";
+  $("cloudUser").textContent = user ? ("Signed in as " + (user.email || user.displayName || "Google user")) : "";
+  if (!user) {
+    status("Not signed in. Your data stays on this device.");
+    return;
+  }
+  const ref = doc(db, "users", user.uid, "appData", "main");
+  try {
+    status("Checking cloud data…");
+    const snap = await getDoc(ref);
+    const local = localSnapshot();
+    if (!snap.exists()) {
+      status("First sync: uploading this device's data…");
+      await writeCloud();
+    } else {
+      const cloud = snap.data();
+      const cloudState = {
+        transactions: cloud.transactions || [],
+        opening: cloud.opening || null,
+        budget: Number(cloud.budget) || 0,
+        secretVaultEncrypted: cloud.secretVaultEncrypted || null,
+        schemaVersion: cloud.schemaVersion || 1
+      };
+      if (hasLocalData(local)) {
+        const localJson = JSON.stringify(local);
+        const cloudJson = JSON.stringify(cloudState);
+        const alreadyPaired = localStorage.getItem("pmv5CloudUid") === user.uid;
+        if (alreadyPaired && localJson === cloudJson) {
+          lastCloudJson = cloudJson;
+        } else {
+          const choice = confirm("Cloud data already exists for this Google account. Press OK to restore cloud data to this device. Press Cancel to keep this device's data and upload it to the cloud.");
+          if (choice) {
+            lastCloudJson = cloudJson;
+            localStorage.setItem("pmv5CloudUid", user.uid);
+            applySnapshot(cloudState);
+            return;
+          } else {
+            status("Keeping this device's data and uploading it…");
+            localStorage.setItem("pmv5CloudUid", user.uid);
+            await writeCloud();
+          }
+        }
+      } else {
+        lastCloudJson = JSON.stringify(cloudState);
+        localStorage.setItem("pmv5CloudUid", user.uid);
+        applySnapshot(cloudState);
+        return;
+      }
+    }
+    unsubscribeCloud = onSnapshot(ref, snap2 => {
+      if (!snap2.exists()) return;
+      const d = snap2.data();
+      const state = {
+        transactions: d.transactions || [],
+        opening: d.opening || null,
+        budget: Number(d.budget) || 0,
+        secretVaultEncrypted: d.secretVaultEncrypted || null,
+        schemaVersion: d.schemaVersion || 1
+      };
+      const json = JSON.stringify(state);
+      if (json !== lastCloudJson) {
+        lastCloudJson = json;
+        applySnapshot(state);
+      }
+    }, e => status("Cloud listener error: " + (e.code || e.message)));
+    status("Cloud sync is on ✓");
+  } catch (e) {
+    console.error(e);
+    status("Cloud setup error: " + (e.code || e.message) + ". Check Firestore rules and internet.");
+  }
+});
+</script>
+</body></html>
