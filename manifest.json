@@ -1,0 +1,11 @@
+{
+  "name": "Priya Money Manager",
+  "short_name": "Priya Money",
+  "description": "Personal income, expense and savings tracker",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fc",
+  "theme_color": "#5146d8",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
